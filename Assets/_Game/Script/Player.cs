@@ -52,6 +52,7 @@ public class Player : Character
             if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
             {
                 Jump();
+                return;
 
 
             }
@@ -65,11 +66,13 @@ public class Player : Character
             if (Input.GetKeyDown(KeyCode.C) && isGrounded)
             {
                 Attack();
+                return;
             }
             //throw
             if (Input.GetKeyDown(KeyCode.V) && isGrounded)
             {
                 Throw();
+                return;
             }
 
         }
