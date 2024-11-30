@@ -2,6 +2,7 @@ using UnityEngine;
 
 public class Kunai : MonoBehaviour
 {
+    public GameObject hitVFX;
     public Rigidbody2D rb;
     // Start is called once before the first execution of Update after the MonoBehaviour is created
     void Start()
@@ -26,6 +27,7 @@ public class Kunai : MonoBehaviour
         if (collision.tag == "Enemy") 
         {
             collision.GetComponent<Character>().OnMit(30f);
+            Instantiate(hitVFX, transform.position, transform.rotation);
             OnDespawn();
         
         }

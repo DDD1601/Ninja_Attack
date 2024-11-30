@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Unity.VisualScripting;
 using UnityEngine;
 
@@ -8,98 +8,127 @@ public class Player : Character
     [SerializeField] private LayerMask groundLayer;
     [SerializeField] private float speed = 5;
     [SerializeField] private float jumpForce = 450;
+    [SerializeField] private float glideGravityScale = 0.5f; // Tốc độ trọng lực giảm khi glide
+    [SerializeField] private float slideSpeed = 8; // Tốc độ khi trượt
     [SerializeField] private Kunai kunaiPrefab;
     [SerializeField] private Transform throwPoint;
     [SerializeField] private GameObject attackArea;
+    [SerializeField] private CapsuleCollider2D normalCollider; // Collider bình thường
+    [SerializeField] private CapsuleCollider2D slideCollider; // Collider khi trượt
 
     private bool isGrounded = true;
     private bool isJumping = false;
     private bool isAttack = false;
     private bool isDeath = false;
+    private bool isGliding = false; // Trạng thái glide
+    private bool isSliding = false; // Trạng thái slide
 
     private float horizontal;
-    
     private int coin = 0;
-
     private Vector3 savePoint;
 
+    private void Awake()
+    {
+        coin = PlayerPrefs.GetInt("coin", 0);
+    }
 
-    // Update is called once per frame
     void FixedUpdate()
     {
-        if (isDeath)
-        {
-            return;
-        }
+        if (isDeath) return;
 
         isGrounded = CheckGrounded();
         horizontal = Input.GetAxisRaw("Horizontal");
         //vertical = Input.GetAxisRaw("Vertical");
-        
+
+
         if (isAttack)
         {
-            rb.linearVelocity = Vector2.zero;
+            rb.velocity = Vector2.zero;
             return;
         }
 
         if (isGrounded)
         {
+            // Nếu nhân vật đang trượt
+            
+            if (isSliding)
+            {
+                rb.velocity = new Vector2(horizontal * slideSpeed, rb.velocity.y);
+                return;
+            }
+
             if (isJumping)
             {
                 return;
             }
-            //jump
-            if (Input.GetKeyDown(KeyCode.Space) && isGrounded)
+
+            // Nhảy
+            if (Input.GetKeyDown(KeyCode.Space))
             {
                 Jump();
                 return;
-
-
             }
-            //change anim run
+
+            // Bắt đầu trượt
+            if (Input.GetKey(KeyCode.LeftShift) && Mathf.Abs(horizontal) > 0.1f)
+            {
+                Slide();
+                ChangeAnim("slide");
+                return;
+            }
+
+            // Chạy
             if (Mathf.Abs(horizontal) > 0.1f)
             {
                 ChangeAnim("run");
-
             }
-            //attack
-            if (Input.GetKeyDown(KeyCode.C) && isGrounded)
+
+            // Tấn công
+            if (Input.GetKeyDown(KeyCode.C))
             {
                 Attack();
                 return;
             }
-            //throw
-            if (Input.GetKeyDown(KeyCode.V) && isGrounded)
+
+            // Ném
+            if (Input.GetKeyDown(KeyCode.V))
             {
                 Throw();
                 return;
             }
-
         }
-        //check falling
-        if (!isGrounded && rb.linearVelocity.y < 0)
+        else
         {
-            ChangeAnim("fall");
-            isJumping = false;
+            // Check nhấn giữ phím để glide
+            if (Input.GetKey(KeyCode.Space))
+            {
+                Glide();
+            }
+            else
+            {
+                ResetGlide();
+            }
 
+            // Kiểm tra trạng thái rơi
+            if (rb.velocity.y < 0)
+            {
+                ChangeAnim("fall");
+                isJumping = false;
+            }
         }
 
-        //moving
-        if (Mathf.Abs(horizontal) > 0.1f )
+        // Di chuyển nhân vật
+        if (Mathf.Abs(horizontal) > 0.1f && !isSliding)
         {
             ChangeAnim("run");
-            rb.linearVelocity = new Vector2(horizontal * speed, rb.linearVelocity.y);
-
+            rb.velocity = new Vector2(horizontal * speed, rb.velocity.y);
             transform.rotation = Quaternion.Euler(new Vector3(0, horizontal > 0 ? 0 : 180, 0));
-            //transform.localScale = new Vector3(horizontal, 1, 1);
         }
-        else if (isGrounded)
+        else if (isGrounded && !isSliding)
         {
             ChangeAnim("idle");
-           
-            rb.linearVelocity = Vector2.zero;
+            rb.velocity = Vector2.zero;
         }
-        
     }
 
     public override void OnInit()
@@ -111,6 +140,7 @@ public class Player : Character
         ChangeAnim("idle");
         DeActiveAttack();
         SavePoint();
+        UIManager.instance.SetCoin(coin);
     }
 
     public override void OnDespawn()
@@ -122,42 +152,29 @@ public class Player : Character
     protected override void OnDeath()
     {
         base.OnDeath();
-    } 
+    }
 
     private bool CheckGrounded()
     {
         Debug.DrawLine(transform.position, transform.position + Vector3.down * 1.1f, Color.red);
         RaycastHit2D hit = Physics2D.Raycast(transform.position, Vector2.down, 1.1f, groundLayer);
-
-        //if (hit.collider != null)
-        //{
-        //    return true;
-        //}
-        //else
-        //{
-        //    return false;
-
-        //}
         return hit.collider != null;
-
-
     }
-    private void Attack()
+
+    public void Attack()
     {
         ChangeAnim("attack");
         isAttack = true;
         Invoke(nameof(ResetAttack), 0.5f);
         ActiveAttack();
         Invoke(nameof(DeActiveAttack), 0.5f);
-
     }
 
-    private void Throw()
+    public void Throw()
     {
         ChangeAnim("throw");
         isAttack = true;
         Invoke(nameof(ResetAttack), 0.5f);
-
         Instantiate(kunaiPrefab, throwPoint.position, throwPoint.rotation);
     }
 
@@ -166,15 +183,58 @@ public class Player : Character
         ChangeAnim("idle");
         isAttack = false;
     }
-    private void Jump()
+
+    public void Jump()
     {
         isJumping = true;
         ChangeAnim("jump");
-
         rb.AddForce(jumpForce * Vector2.up);
     }
 
-    
+    public void Glide()
+    {
+        if (!isGrounded && rb.velocity.y < 0)
+        {
+            if (!isGliding)
+            {
+                isGliding = true;
+                ChangeAnim("glide");
+                rb.gravityScale = glideGravityScale; // Giảm trọng lực khi glide
+            }
+        }
+    }
+
+    public void ResetGlide()
+    {
+        if (isGliding)
+        {
+            isGliding = false;
+            rb.gravityScale = 1; // Trở lại trọng lực bình thường
+        }
+    }
+
+    public void Slide()
+    {
+        if (isGrounded && !isSliding)
+        {
+            isSliding = true;
+            ChangeAnim("slide");
+
+            // Chuyển sang collider trượt
+            normalCollider.enabled = false;
+            slideCollider.enabled = true;
+
+            Invoke(nameof(ResetSlide), 0.5f); // Kết thúc trượt sau 0.5 giây
+        }
+    }
+
+    private void ResetSlide()
+    {
+        isSliding = false;
+        normalCollider.enabled = true;
+        slideCollider.enabled = false;
+        ChangeAnim("idle");
+    }
 
     internal void SavePoint()
     {
@@ -189,7 +249,11 @@ public class Player : Character
     private void DeActiveAttack()
     {
         attackArea.SetActive(false);
+    }
 
+    public void SetMove(float horizontal)
+    {
+        this.horizontal = horizontal;
     }
 
     private void OnTriggerEnter2D(Collider2D collision)
@@ -197,6 +261,8 @@ public class Player : Character
         if (collision.tag == "Coin")
         {
             coin++;
+            PlayerPrefs.SetInt("coin", coin);
+            UIManager.instance.SetCoin(coin);
             Destroy(collision.gameObject);
         }
         if (collision.tag == "DeathZone")
@@ -205,6 +271,5 @@ public class Player : Character
             ChangeAnim("die");
             Invoke(nameof(OnInit), 1f);
         }
-
     }
 }
